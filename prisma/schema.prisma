@@ -1,0 +1,190 @@
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+enum Role {
+  admin
+  user
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id        Int           @id @default(autoincrement())
+  name      String
+  email     String        @unique
+  password  String
+  role      Role          @default(user)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  attempts  QuizAttempt[]
+
+  @@map("users")
+}
+
+model Category {
+  id          Int        @id @default(autoincrement())
+  name        String     @unique
+  description String?    @db.Text
+  slug        String     @unique
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  questions   Question[]
+  quizzes     Quiz[]
+
+  @@map("categories")
+}
+
+model Tag {
+  id        Int           @id @default(autoincrement())
+  name      String        @unique
+  slug      String        @unique
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+  questions QuestionTag[]
+
+  @@map("tags")
+}
+
+model Company {
+  id        Int               @id @default(autoincrement())
+  name      String            @unique
+  slug      String            @unique
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  questions QuestionCompany[]
+
+  @@map("companies")
+}
+
+model Quiz {
+  id               Int           @id @default(autoincrement())
+  title            String
+  description      String?       @db.Text
+  categoryId       Int?          @map("category_id")
+  category         Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  timeLimit        Int           @map("time_limit") // In seconds
+  isDailyChallenge Boolean       @default(false) @map("is_daily_challenge")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  questions        Question[]
+  attempts         QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model Question {
+  id            Int               @id @default(autoincrement())
+  questionText  String            @db.Text @map("question_text")
+  explanation   String?           @db.Text
+  difficulty    Difficulty        @default(medium)
+  categoryId    Int               @map("category_id")
+  category      Category          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  quizId        Int?              @map("quiz_id")
+  quiz          Quiz?             @relation(fields: [quizId], references: [id], onDelete: SetNull)
+  marks         Float             @default(1.0)
+  negativeMarks Float             @default(0.0) @map("negative_marks")
+  timeLimit     Int?              @map("time_limit") // In seconds, optional
+  type          String            @default("mcq")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+  options       Option[]
+  tags          QuestionTag[]
+  companies     QuestionCompany[]
+  userAnswers   UserAnswer[]
+
+  @@map("questions")
+}
+
+model Option {
+  id         Int          @id @default(autoincrement())
+  questionId Int          @map("question_id")
+  question   Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  optionText String       @db.Text @map("option_text")
+  isCorrect  Boolean      @default(false) @map("is_correct")
+  userAnswers UserAnswer[]
+
+  @@map("options")
+}
+
+model QuestionTag {
+  questionId Int      @map("question_id")
+  tagId      Int      @map("tag_id")
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, tagId])
+  @@map("question_tags")
+}
+
+model QuestionCompany {
+  questionId Int      @map("question_id")
+  companyId  Int      @map("company_id")
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([questionId, companyId])
+  @@map("question_companies")
+}
+
+model QuizAttempt {
+  id            Int           @id @default(autoincrement())
+  userId        Int           @map("user_id")
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  quizId        Int?          @map("quiz_id")
+  quiz          Quiz?         @relation(fields: [quizId], references: [id], onDelete: SetNull)
+  status        AttemptStatus @default(IN_PROGRESS)
+  startedAt     DateTime      @default(now()) @map("started_at")
+  completedAt   DateTime?     @map("completed_at")
+  remainingTime Int?          @map("remaining_time") // For resuming progress (seconds)
+  userAnswers   UserAnswer[]
+  quizResult    QuizResult?
+
+  @@map("quiz_attempts")
+}
+
+model UserAnswer {
+  id               Int         @id @default(autoincrement())
+  attemptId        Int         @map("attempt_id")
+  attempt          QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       Int         @map("question_id")
+  question         Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId Int?        @map("selected_option_id")
+  selectedOption   Option?     @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
+  isCorrect        Boolean     @default(false) @map("is_correct")
+  timeSpent        Int         @default(0) @map("time_spent") // In seconds
+  bookmarked       Boolean     @default(false)
+
+  @@map("user_answers")
+}
+
+model QuizResult {
+  id               Int         @id @default(autoincrement())
+  attemptId        Int         @unique @map("attempt_id")
+  attempt          QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  totalScore       Float       @map("total_score")
+  accuracy         Float
+  attemptedCount   Int         @map("attempted_count")
+  skippedCount     Int         @map("skipped_count")
+  correctCount     Int         @map("correct_count")
+  incorrectCount   Int         @map("incorrect_count")
+  percentile       Float?      @map("percentile")
+  categoryAnalysis Json?       @map("category_analysis") // Holds breakdown by category
+
+  @@map("quiz_results")
+}
